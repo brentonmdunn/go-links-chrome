@@ -49,6 +49,10 @@ Click **Import JSON** and choose your original `~/.config/golinks/links.json`. T
 
 Only HTTP(S) destinations are accepted, and destinations pointing back to `go` are rejected to avoid redirect loops. The manager and export functionality use bundled scripts with no remotely hosted code or dependencies.
 
+Configuration is limited to 5,000 shortcuts and 5 MB of serialized JSON. Shortcut names are limited to 256 characters, destinations to 8,192 characters, and navigation input to 16,384 characters. Invalid imports and changes exceeding the combined configuration limits are rejected before storage is updated.
+
+The [security review](SECURITY.md) describes the audit scope, hardening changes, and remaining risks. Local storage and JSON exports are not a secrets vault; avoid storing credentials or access tokens in shortcut URLs.
+
 This affects Chrome profiles where you load the extension. Your original Go daemon is independent; other browsers still need that installation if you want shortcuts there. A managed browser may restrict unpacked extensions.
 
 ## Development
