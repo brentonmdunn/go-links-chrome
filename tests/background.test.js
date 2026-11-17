@@ -5,6 +5,7 @@ const listeners = {};
 const event = name => ({ addListener: callback => { listeners[name] = callback; } });
 let state = {};
 let rule;
+let accessLevel;
 const navigations = [];
 globalThis.chrome = {
   runtime: {
@@ -14,6 +15,7 @@ globalThis.chrome = {
   },
   declarativeNetRequest: { updateDynamicRules: async options => { rule = options.addRules[0]; } },
   storage: { local: {
+    setAccessLevel: async options => { accessLevel = options.accessLevel; },
     get: async () => { await new Promise(resolve => setImmediate(resolve)); return structuredClone(state); },
     set: async value => { state = structuredClone(value); }
   } },
@@ -28,6 +30,7 @@ function message(payload) { return new Promise(resolve => listeners.message(payl
 test("worker initializes a narrow, persistent redirect rule and an empty link list", async () => {
   assert.deepEqual(await message({ type: "import", links: {} }), { ok: true });
   assert.deepEqual(state.links, {});
+  assert.equal(accessLevel, "TRUSTED_CONTEXTS");
   assert.equal(rule.action.redirect.regexSubstitution, "chrome-extension://test-id/redirect.html#\\0");
   const pattern = new RegExp(rule.condition.regexFilter, "i");
   for (const url of ["http://go/", "https://go/gh/repo?tab=readme", "http://go:80/calendar"]) assert.ok(pattern.test(url));
@@ -65,5 +68,29 @@ test("rename, collision rejection, and deletion operate without losing unrelated
   assert.ok(state.links.two);
 });
 test("messages from outside the manager cannot modify storage", () => {
-  assert.equal(listeners.message({ type: "delete", name: "two" }, { id: "other", url: "https://example.com" }, () => assert.fail()), undefined);
+  for (const untrusted of [
+    { id: "other", url: sender.url },
+    { id: "test-id", url: "https://example.com/manager.html" },
+    { id: "test-id", url: "chrome-extension://test-id/manager.html.evil" },
+    { id: "test-id", url: "chrome-extension://test-id/redirect.html" },
+    { id: "test-id", url: "chrome-extension://other/manager.html" },
+    { ...sender, frameId: 1 },
+    { id: "test-id", url: "invalid URL" }
+  ]) assert.equal(listeners.message({ type: "delete", name: "two" }, untrusted, () => assert.fail()), undefined);
+});
+test("malformed messages cannot modify storage and valid messages still work afterwards", async () => {
+  const before = structuredClone(state);
+  for (const payload of [null, {}, { type: "unknown" }, { type: "import", links: {}, overwrite: "false" }, { type: "save", name: {}, target: "https://example.com" }]) {
+    assert.equal((await message(payload)).ok, false);
+    assert.deepEqual(state, before);
+  }
+  assert.equal((await message({ type: "import", links: {} })).ok, true);
+});
+test("combined configuration limits are enforced before imports are committed", async () => {
+  const before = structuredClone(state);
+  const incoming = Object.fromEntries(Array.from({ length: 5000 }, (_, i) => [`imported${i}`, "https://example.com"]));
+  const response = await message({ type: "import", links: incoming });
+  assert.equal(response.ok, false);
+  assert.match(response.error, /maximum/);
+  assert.deepEqual(state, before);
 });

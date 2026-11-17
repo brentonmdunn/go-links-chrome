@@ -10,6 +10,7 @@ export function redirectRule() {
 }
 
 async function initialize() {
+  await chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
   await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [1], addRules: [redirectRule()] });
   const { links } = await chrome.storage.local.get("links");
   if (links === undefined) {
@@ -48,12 +49,23 @@ async function mutate(message) {
       if (message.overwrite || !Object.hasOwn(links, name)) links[name] = target;
     }
   } else throw new Error("Unknown operation.");
-  await chrome.storage.local.set({ links });
+  await chrome.storage.local.set({ links: validateLinks(links) });
   return { ok: true };
 }
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
-  if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL("manager.html"))) return;
+  if (sender.id !== chrome.runtime.id || !sender.url || sender.frameId > 0) return;
+  let source;
+  try { source = new URL(sender.url); } catch { return; }
+  if (source.protocol !== "chrome-extension:" || source.host !== chrome.runtime.id || source.pathname !== "/manager.html") return;
+  if (!message || typeof message !== "object" || !["save", "delete", "import"].includes(message.type)) {
+    respond({ ok: false, error: "Unknown operation." });
+    return;
+  }
+  if (message.overwrite !== undefined && typeof message.overwrite !== "boolean") {
+    respond({ ok: false, error: "Overwrite must be a boolean." });
+    return;
+  }
   const task = mutations.then(() => mutate(message));
   mutations = task.catch(() => {});
   task.then(respond, error => respond({ ok: false, error: error.message }));

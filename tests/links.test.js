@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeName, normalizeTarget, validateLinks, parseInput, resolve } from "../links.js";
+import { MAX_LINKS, MAX_NAME_LENGTH, MAX_TARGET_LENGTH, MAX_INPUT_LENGTH, normalizeName, normalizeTarget, validateLinks, parseInput, resolve } from "../links.js";
 
 const links = {
   calendar: "https://calendar.google.com",
@@ -49,4 +49,27 @@ test("imports reject malformed entries, dangerous schemes, loop targets, and dup
 test("inherited object properties are never shortcuts", () => {
   assert.equal(resolve({}, "constructor"), null);
   assert.equal(resolve({}, "toString"), null);
+});
+
+test("configuration and navigation input enforce resource limits", () => {
+  assert.throws(() => validateLinks(Object.fromEntries(Array.from({ length: MAX_LINKS + 1 }, (_, i) => [`s${i}`, "https://example.com"]))), /maximum/);
+  assert.throws(() => normalizeName("a".repeat(MAX_NAME_LENGTH + 1)), /at most/);
+  assert.throws(() => normalizeTarget("https://example.com/" + "a".repeat(MAX_TARGET_LENGTH)), /at most/);
+  assert.throws(() => parseInput("a".repeat(MAX_INPUT_LENGTH + 1)), /excessively long/);
+  const large = Object.fromEntries(Array.from({ length: 1000 }, (_, i) => [`s${i}`, "https://example.com/" + "a".repeat(5000)]));
+  assert.throws(() => validateLinks(large), /5 MB/);
+});
+test("ambiguous URLs, disguised credentials, control characters and encoded loop hosts are rejected", () => {
+  for (const target of ["https://example.com\\@evil.example", "https://user%40company@example.com/", "https://%67%6f/path", "https://example.com/\u007f", "https://example.com/a\nb"]) assert.throws(() => normalizeTarget(target), target);
+  for (const input of [null, {}, "gh/repo\n", "gh/repo\u0000", "gh/repo\u007f", "https://user:pass@go/gh/repo"]) assert.throws(() => parseInput(input));
+});
+test("hostile template remainders cannot change destination scheme or origin", () => {
+  const variants = { path: "https://trusted.example/{*}", query: "https://trusted.example/?q={*}" };
+  for (const key of Object.keys(variants)) {
+    for (const rest of ["//evil.example", "\\\\evil.example", "@evil.example", "javascript:alert(1)", "%2f%2fevil.example", "../../other"]) {
+      const result = new URL(resolve(variants, `${key}/${rest}`));
+      assert.equal(result.origin, "https://trusted.example");
+      assert.equal(result.username, "");
+    }
+  }
 });

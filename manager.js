@@ -1,8 +1,10 @@
-import { resolve, validateLinks } from "./links.js";
+import { MAX_JSON_BYTES, MAX_NAME_LENGTH, MAX_TARGET_LENGTH, resolve, validateLinks } from "./links.js";
 
 const $ = id => document.getElementById(id);
 let links = {};
 let previous = null;
+$("name").maxLength = MAX_NAME_LENGTH;
+$("target").maxLength = MAX_TARGET_LENGTH;
 function status(text, error = false) { $("status").textContent = text; $("status").classList.toggle("error", error); }
 async function send(message) {
   const response = await chrome.runtime.sendMessage(message);
@@ -51,7 +53,7 @@ function render() {
     row.append(text, actions); $("links").append(row);
   }
   $("empty").hidden = shown > 0;
-  $("empty").textContent = entries.length ? "No shortcuts match your filter." : "No shortcuts yet. Add your first one above.";
+  $("empty").textContent = entries.length ? "No shortcuts match the filter." : "No shortcuts configured.";
 }
 async function load() { links = validateLinks((await chrome.storage.local.get("links")).links || {}); render(); }
 
@@ -70,7 +72,7 @@ $("import").addEventListener("click", () => $("file").click());
 $("file").addEventListener("change", async () => {
   try {
     const file = $("file").files[0]; if (!file) return;
-    if (file.size > 5_000_000) throw new Error("Choose a JSON file smaller than 5 MB.");
+    if (file.size > MAX_JSON_BYTES) throw new Error("Choose a JSON file smaller than 5 MB.");
     await send({ type: "import", links: validateLinks(JSON.parse(await file.text())), overwrite: $("overwrite").checked });
     status("Import complete. Existing shortcuts were " + ($("overwrite").checked ? "updated." : "kept."));
   } catch (error) { status(error.message, true); }
@@ -91,5 +93,5 @@ try {
   // Starting the worker also initializes storage on a freshly loaded extension.
   await send({ type: "import", links: {} });
   const prefill = new URLSearchParams(location.search).get("name");
-  if (prefill) { $("name").value = prefill; $("target").focus(); status(`go/${prefill} isn’t a link yet. Add a destination below.`); }
+  if (prefill) { $("name").value = prefill; $("target").focus(); status(`Shortcut not found: go/${prefill}. Enter a destination to create it.`); }
 } catch (error) { status(error.message, true); }
