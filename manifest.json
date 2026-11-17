@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Go Links",
+  "version": "1.0.0",
+  "minimum_chrome_version": "102",
+  "description": "Personal go/ shortcuts, stored locally. Nested paths and flexible URL templates.",
+  "permissions": ["storage", "declarativeNetRequestWithHostAccess"],
+  "host_permissions": ["http://go/*", "https://go/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "omnibox": { "keyword": "go" },
+  "action": { "default_title": "Manage Go Links" },
+  "options_ui": { "page": "manager.html", "open_in_tab": true },
+  "web_accessible_resources": [{
+    "resources": ["redirect.html"],
+    "matches": ["http://go/*", "https://go/*"]
+  }]
+}
